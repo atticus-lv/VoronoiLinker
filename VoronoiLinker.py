@@ -1354,6 +1354,7 @@ class NODE_OT_voronoi_fastmath(bpy.types.Operator):
 
         whoList = listMathMap if displayWho[0] == 0 else listVecMathMap
         displayList[0] = [li[0] for li in whoList]
+
         if self.bridge in ['', ' ']:
             DispMenu(0)
         elif self.bridge in displayList[0]:
@@ -1362,8 +1363,10 @@ class NODE_OT_voronoi_fastmath(bpy.types.Operator):
         else:
             typ = listDictMathEditor[displayWho[0]].get(context.space_data.tree_type, None)
             if typ is None:
-                return {'CANCELLED'}
-            bpy.ops.node.add_node('INVOKE_DEFAULT', type=typ, use_transform=True)
+                bpy.ops.node.add_search('INVOKE_DEFAULT',use_transform=True)
+                # return {'CANCELLED'}
+            else:
+                bpy.ops.node.add_node('INVOKE_DEFAULT', type=typ, use_transform=True)
             aNd = context.space_data.edit_tree.nodes.active
             aNd.operation = self.bridge
             tree.links.new(mixerSks[0], aNd.inputs[0])
@@ -1371,6 +1374,38 @@ class NODE_OT_voronoi_fastmath(bpy.types.Operator):
                 tree.links.new(mixerSks[1], aNd.inputs[1])
         return {'RUNNING_MODAL'}
 
+
+MATH_MAP = {
+    'Functions': [
+        'ADD', 'SUBTRACT', 'MULTIPLY', 'DIVIDE', 'MULTIPLY', None,  # None for empty line
+        'POWER', 'LOGARITHM', 'SQRT', 'INVERSE_SQRT', 'ABSOLUTE', 'EXPONENT',
+    ],
+    'Comparisons': [
+        'MINIMUM', 'MAXIMUM', 'LESS_THAN', 'GREATER_THAN', 'SIGN', 'COMPARE', 'SMOOTH_MIN', 'SMOOTH_MAX',
+    ],
+    'Rounding': [
+        'ROUND', 'FLOOR', 'CEIL', 'TRUNC', None,
+        'FRACT', 'MODULO', 'WRAP', 'SNAP',
+    ],
+    'Trigonometry': [
+        'SINE', 'COSINE', 'TANGENT', None,
+        'ARCSINE', 'ARCCOSINE', 'ARCTANGENT', 'ARCTAN2'
+    ],
+    'Convesion': [
+        'RADIANS', 'DEGREES'
+    ]
+}
+
+VEC_MATH_MAP = {
+    'Operation': [
+        'SCALE', 'LENGTH', 'DISTANCE', None,
+        'DOT_PRODUCT', 'CROSS_PRODUCT', 'FACEFORWARD', 'PROJECT', 'REFRACT', 'REFLECT', None,
+        'SUBTRACT', 'ADD', 'DIVIDE', 'MULTIPLY', 'ABSOLUTE', 'MULTIPLY_ADD', None,
+        'SINE', 'COSINE', 'TANGENT', None,
+        'MINIMUM', 'MAXIMUM', 'FLOOR', 'CEIL', 'MODULO', 'FRACTION', 'WRAP', 'SNAP', 'ABSOLUTE', None,
+        'NORMALIZE'
+    ]
+}
 
 listMathMap = [('Advanced', ['SQRT', 'POWER', 'EXPONENT', 'LOGARITHM', 'INVERSE_SQRT', 'PINGPONG']),
                ('Compatible Primitives', ['SUBTRACT', 'ADD', 'DIVIDE', 'MULTIPLY', 'ABSOLUTE', 'MULTIPLY_ADD']), (
