@@ -1,12 +1,19 @@
 import bpy
 from bpy.props import BoolProperty, FloatProperty, IntProperty, EnumProperty, FloatVectorProperty, StringProperty, \
     IntVectorProperty
+import rna_keymap_ui
 
 list_addon_keymaps = []
 
 
 class VoronoiAddonPrefs(bpy.types.AddonPreferences):
     bl_idname = __package__
+
+    ui: EnumProperty(items=[
+        ('DRAW', 'Draw', 'Draw'),
+        ('SETTINGS', 'Settings', 'Settings'),
+        ('KEYMAP', 'Keymap', 'Keymap'),
+    ])
 
     ds_line_width: IntProperty(name='Line Width', default=1, min=1, max=16, subtype='FACTOR')
     ds_point_offset_x: FloatProperty(name='Point offset X', default=20, min=-50, max=50)
@@ -23,8 +30,9 @@ class VoronoiAddonPrefs(bpy.types.AddonPreferences):
     ds_is_draw_area: BoolProperty(name='Socket Area', default=True)
     ds_is_colored_area: BoolProperty(name='Socket Area', default=True)
     ds_text_style: EnumProperty(name='Text Frame Style', default='Classic',
-                                items={('Classic', 'Classic', ''), ('Simplified', 'Simplified', ''),
-                                       ('Text', 'Only text', '')})
+                                items={('Classic', 'Default', ''),
+                                       ('Simplified', 'Simple', ''),
+                                       ('Text', 'Text', '')})
 
     vlds_is_always_line: BoolProperty(name='Always draw line for VoronoiLinker', default=False)
     vm_preview_hk_inverse: BoolProperty(name='Previews hotkey inverse', default=False)
@@ -56,18 +64,47 @@ class VoronoiAddonPrefs(bpy.types.AddonPreferences):
                                              ('FMA1', 'If everyone is a math socket', '')})
 
     def draw(self, context):
-        col0 = self.layout.column()
-        col1 = col0.column(align=True)
-        col1.prop(self, 'va_allow_classic_compos_viewer')
-        col1.prop(self, 'va_allow_classic_geo_viewer')
-        box = col0.box()
+        layout = self.layout
+        row = layout.row(align=True)
+        row.prop(self, 'ui', expand=True)
+        match self.ui:
+            case 'DRAW':
+                self.draw_draw(context, layout)
+            case 'SETTINGS':
+                self.draw_settings(context, layout)
+            case 'KEYMAP':
+                self.draw_keymaps(context, layout)
+
+    def draw_draw(self, context, layout):
+
+        layout.prop(self, 'ds_text_style')
+        layout.prop(self, 'vlds_is_always_line')
+
+        row = layout.row()
+        row.use_property_split = True
+        col_split1 = row.column(heading='Draw')
+        col_split1.prop(self, 'ds_is_draw_sk_text')
+        col_split1.prop(self, 'ds_is_draw_marker')
+        col_split1.prop(self, 'ds_is_draw_point')
+        col_split1.prop(self, 'ds_is_draw_line')
+        col_split1.prop(self, 'ds_is_draw_area')
+
+        col_split2 = row.column(heading='Color')
+        col_split2.prop(self, 'ds_is_colored_sk_text')
+        col_split2.prop(self, 'ds_is_colored_marker')
+        col_split2.prop(self, 'ds_is_colored_point')
+        col_split2.prop(self, 'ds_is_colored_line')
+        col_split2.prop(self, 'ds_is_colored_area')
+
+        box = layout.box()
         col1 = box.column(align=True)
-        col1.label(text='Draw settings:')
         col1.prop(self, 'ds_point_offset_x')
         col1.prop(self, 'ds_text_frame_offset')
         col1.prop(self, 'ds_font_size')
+        col1.separator()
         box = col1.box()
-        box.prop(self, 'a_display_advanced')
+        box.prop(self, 'a_display_advanced', text='Advanced',
+                 icon='TRIA_DOWN' if self.a_display_advanced else 'TRIA_RIGHT',emboss=False)
         if self.a_display_advanced:
             col2 = box.column()
             col3 = col2.column(align=True)
@@ -87,27 +124,45 @@ class VoronoiAddonPrefs(bpy.types.AddonPreferences):
                 row = col4.row(align=True)
                 row.prop(self, 'ds_shadow_offset')
                 col4.prop(self, 'ds_shadow_blur')
-            col2.prop(self, 'ds_is_draw_debug')
+            col2.prop(self, 'ds_is_draw_debug',text = 'Debug')
 
-        row = col1.row()
-        row.use_property_split = True
-        col_split1 = row.column(heading='Draw')
-        col_split1.prop(self, 'ds_is_draw_sk_text')
-        col_split1.prop(self, 'ds_is_draw_marker')
-        col_split1.prop(self, 'ds_is_draw_point')
-        col_split1.prop(self, 'ds_is_draw_line')
-        col_split1.prop(self, 'ds_is_draw_area')
+    def draw_keymaps(self, context, layout):
+        col = layout.column()
+        # col.label(text="Keymap", icon="KEYINGSET")
+        km = None
+        wm = bpy.context.window_manager
+        kc = wm.keyconfigs.user
 
-        col_split2 = row.column(heading='Color')
-        col_split2.prop(self, 'ds_is_colored_sk_text')
-        col_split2.prop(self, 'ds_is_colored_marker')
-        col_split2.prop(self, 'ds_is_colored_point')
-        col_split2.prop(self, 'ds_is_colored_line')
-        col_split2.prop(self, 'ds_is_colored_area')
+        old_km_name = ""
+        get_kmi_l = []
 
-        col1.prop(self, 'ds_text_style')
-        col1.prop(self, 'vlds_is_always_line')
-        box = col0.box()
+        for km_add, kmi_add in list_addon_keymaps:
+            for km_con in kc.keymaps:
+                if km_add.name == km_con.name:
+                    km = km_con
+                    break
+
+            for kmi_con in km.keymap_items:
+                if kmi_add.idname == kmi_con.idname and kmi_add.name == kmi_con.name:
+                    get_kmi_l.append((km, kmi_con))
+
+        get_kmi_l = sorted(set(get_kmi_l), key=get_kmi_l.index)
+
+        for km, kmi in get_kmi_l:
+            if not km.name == old_km_name:
+                col.label(text=str(km.name), icon="DOT")
+
+            col.context_pointer_set("keymap", km)
+            rna_keymap_ui.draw_kmi([], kc, km, kmi, col, 0)
+
+            old_km_name = km.name
+
+    def draw_settings(self, context, layout):
+        col1 = layout.column(align=True)
+        col1.prop(self, 'va_allow_classic_compos_viewer')
+        col1.prop(self, 'va_allow_classic_geo_viewer')
+
+        box = layout.box()
         col1 = box.column(align=True)
         col1.label(text='Mixer settings:')
         col1.prop(self, 'vm_menu_style')
@@ -120,13 +175,14 @@ class VoronoiAddonPrefs(bpy.types.AddonPreferences):
             col1 = box.column(align=True)
             col1.prop(self, 'fm_trigger_activate')
             col1.prop(self, 'fm_is_empty_hold')
-        box = col0.box()
+
+        box = layout.box()
         col1 = box.column(align=True)
         col1.label(text='Preview settings:')
         col1.prop(self, 'vp_is_live_preview')
         col1.prop(self, 'vp_select_previewed_node')
         col1.prop(self, 'vm_preview_hk_inverse')
-        box = col0.box()
+        box = layout.box()
         col1 = box.column(align=True)
         col1.label(text='Hider settings:')
         col1.prop(self, 'vh_draw_text_for_unhide')

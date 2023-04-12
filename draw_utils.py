@@ -6,7 +6,6 @@ from bpy.app.translations import pgettext_iface as _tips
 
 from math import pi, inf, sin, cos, copysign
 
-
 gv_shaders = [None, None]
 gv_uifac = [1.0]
 gv_font_id = [0]
@@ -15,6 +14,7 @@ gv_where = [None]
 
 def get_addon_prefs():
     return bpy.context.preferences.addons[__package__].preferences
+
 
 def draw_way(vtxs, vcol, siz):
     # bgl.glEnable(bgl.GL_BLEND)
@@ -180,8 +180,6 @@ def get_sk_vec_col(Sk, apw):
     return vec_4_pow(Vector(Sk.draw_color(bpy.context, Sk.node)), 1 / apw)
 
 
-
-
 def set_font():
     gv_font_id[0] = blf.load(r'C:\Windows\Fonts\consola.ttf')
     gv_font_id[0] = 0 if gv_font_id[0] == -1 else gv_font_id[
@@ -325,6 +323,7 @@ def gen_nearest_sockets_list(nd,
 
 list_sk_perms = ['VALUE', 'RGBA', 'VECTOR', 'INT', 'BOOLEAN']
 
+
 def voronoi_Linker_draw_callback(sender, context):
     if gv_where[0] != context.space_data:
         return
@@ -385,6 +384,7 @@ def voronoi_Linker_draw_callback(sender, context):
             draw_wide_point(wp2[0], wp2[1], get_sk_vec_col(sender.list_sk_goal_in[1], 2.2))
         LinkerDrawSk(sender.list_sk_goal_out[1])
         LinkerDrawSk(sender.list_sk_goal_in[1])
+
 
 def voronoi_mass_linker_draw_callback(sender, context):
     if gv_where[0] != context.space_data:

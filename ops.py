@@ -378,37 +378,39 @@ dict_mixer_mix_int = {'INT': 'VALUE'}
 
 def do_mix(context, who):
     tree = context.space_data.edit_tree
-    if tree != None:
-        bpy.ops.node.add_node('INVOKE_DEFAULT', type=who, use_transform=True)
-        active_nd = tree.nodes.active
-        active_nd.width = 140
-        match active_nd.bl_idname:
-            case 'ShaderNodeMath' | 'ShaderNodeVectorMath' | 'CompositorNodeMath' | 'TextureNodeMath':
-                active_nd.operation = 'MAXIMUM'
-            case 'FunctionNodeBooleanMath':
-                active_nd.operation = 'OR'
-            case 'TextureNodeTexture':
-                active_nd.show_preview = False
-            case 'GeometryNodeSwitch':
-                active_nd.input_type = dict_mixer_switch_type.get(mixerSkTyp[0], mixerSkTyp[0])
-            case 'FunctionNodeCompare':
-                active_nd.data_type = dict_mixer_switch_type.get(mixerSkTyp[0], mixerSkTyp[0])
-                active_nd.operation = active_nd.operation if active_nd.data_type != 'FLOAT' else 'EQUAL'
-            case 'ShaderNodeMix':
-                active_nd.data_type = dict_mixer_switch_type.get(mixerSkTyp[0], mixerSkTyp[0])
-        match active_nd.bl_idname:
-            case 'GeometryNodeSwitch' | 'FunctionNodeCompare' | 'ShaderNodeMix':
-                tgl = active_nd.bl_idname != 'FunctionNodeCompare'
-                foundSkList = [sk for sk in (reversed(active_nd.inputs) if tgl else active_nd.inputs) if
-                               sk.type == dict_mixer_mix_int.get(mixerSkTyp[0], mixerSkTyp[0])]
-                tree.links.new(mixerSks[0], foundSkList[tgl])
-                tree.links.new(mixerSks[1], foundSkList[not tgl])
-            case _:
-                if active_nd.inputs[dict_mixer_defs[active_nd.bl_idname][0]].is_multi_input:
-                    tree.links.new(mixerSks[1], active_nd.inputs[dict_mixer_defs[active_nd.bl_idname][1]])
-                tree.links.new(mixerSks[0], active_nd.inputs[dict_mixer_defs[active_nd.bl_idname][0]])
-                if active_nd.inputs[dict_mixer_defs[active_nd.bl_idname][0]].is_multi_input is False:
-                    tree.links.new(mixerSks[1], active_nd.inputs[dict_mixer_defs[active_nd.bl_idname][1]])
+    if tree is None: return
+
+    bpy.ops.node.add_node('INVOKE_DEFAULT', type=who, use_transform=True)
+    active_nd = tree.nodes.active
+    active_nd.width = 140
+    match active_nd.bl_idname:
+        case 'ShaderNodeMath' | 'ShaderNodeVectorMath' | 'CompositorNodeMath' | 'TextureNodeMath':
+            active_nd.operation = 'MAXIMUM'
+        case 'FunctionNodeBooleanMath':
+            active_nd.operation = 'OR'
+        case 'TextureNodeTexture':
+            active_nd.show_preview = False
+        case 'GeometryNodeSwitch':
+            active_nd.input_type = dict_mixer_switch_type.get(mixerSkTyp[0], mixerSkTyp[0])
+        case 'FunctionNodeCompare':
+            active_nd.data_type = dict_mixer_switch_type.get(mixerSkTyp[0], mixerSkTyp[0])
+            active_nd.operation = active_nd.operation if active_nd.data_type != 'FLOAT' else 'EQUAL'
+        case 'ShaderNodeMix':
+            active_nd.data_type = dict_mixer_switch_type.get(mixerSkTyp[0], mixerSkTyp[0])
+
+    match active_nd.bl_idname:
+        case 'GeometryNodeSwitch' | 'FunctionNodeCompare' | 'ShaderNodeMix':
+            tgl = active_nd.bl_idname != 'FunctionNodeCompare'
+            foundSkList = [sk for sk in (reversed(active_nd.inputs) if tgl else active_nd.inputs) if
+                           sk.type == dict_mixer_mix_int.get(mixerSkTyp[0], mixerSkTyp[0])]
+            tree.links.new(mixerSks[0], foundSkList[tgl])
+            tree.links.new(mixerSks[1], foundSkList[not tgl])
+        case _:
+            if active_nd.inputs[dict_mixer_defs[active_nd.bl_idname][0]].is_multi_input:
+                tree.links.new(mixerSks[1], active_nd.inputs[dict_mixer_defs[active_nd.bl_idname][1]])
+            tree.links.new(mixerSks[0], active_nd.inputs[dict_mixer_defs[active_nd.bl_idname][0]])
+            if active_nd.inputs[dict_mixer_defs[active_nd.bl_idname][0]].is_multi_input is False:
+                tree.links.new(mixerSks[1], active_nd.inputs[dict_mixer_defs[active_nd.bl_idname][1]])
 
 
 class NODE_OT_voronoi_mixer_mixer(bpy.types.Operator):
@@ -642,10 +644,9 @@ def VoronoiPreviewer_DoPreview(context, goalSk):
     skix = GetSkIndex(goalSk)
     # Удалить все свои следы предыдущего использования для нод-групп текущего типа редактора
     for ng in bpy.data.node_groups:
-        if ng.type == context.space_data.node_tree.type:
-            sk = ng.outputs.get('voronoi_preview')
-            if sk != None:
-                ng.outputs.remove(sk)
+        if ng.type != context.space_data.node_tree.type: continue
+        if sk := ng.outputs.get('voronoi_preview'):
+            ng.outputs.remove(sk)
     # (1)Переполучить сокет. Нужен для ситуациях присасывания к сокетам "voronoi_preview", которые исчезли
     goalSk = goalSk.node.outputs[skix] if skix < length(goalSk.node.outputs) else None
     # Если неудача, то выйти
@@ -954,15 +955,17 @@ class NODE_OT_voronoi_fastmath(bpy.types.Operator):
         else:
             typ = NT_MATH_MAP[displayWho[0]].get(context.space_data.tree_type, None)
             if typ is None:
-                bpy.ops.node.add_search('INVOKE_DEFAULT', use_transform=True)
-                # return {'CANCELLED'}
+                # bpy.ops.node.add_search('INVOKE_DEFAULT', use_transform=True)
+                return {'CANCELLED'}
             else:
                 bpy.ops.node.add_node('INVOKE_DEFAULT', type=typ, use_transform=True)
+
             aNd = context.space_data.edit_tree.nodes.active
             aNd.operation = self.bridge
             tree.links.new(mixerSks[0], aNd.inputs[0])
             if mixerSks[1]:  # Чтобы можно было "вытягивать" быструю математику из сокета
                 tree.links.new(mixerSks[1], aNd.inputs[1])
+
         return {'RUNNING_MODAL'}
 
 
@@ -971,7 +974,7 @@ class VL_MT_voronoi_fastmath_pie(bpy.types.Menu):
     bl_label = ''
 
     def draw(self, context):
-        pie = self.layout.menu_pie()
+        pie = self.layout.column()
         for li in displayList[0]:
             # if (get_addon_prefs().fm_is_empty_hold is False) and (li == ' '): continue
 
