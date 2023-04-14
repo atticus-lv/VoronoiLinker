@@ -193,7 +193,7 @@ def pos_view_to_reg(x, y):
 def prepar_get_wp(loc, offsetx):
     pos = pos_view_to_reg(loc.x + offsetx, loc.y)
     rd = \
-        pos_view_to_reg(loc.x + offsetx + 6 * get_addon_prefs().ds_point_radius, loc.y)[0] - pos[0]
+        pos_view_to_reg(loc.x + offsetx + 6 * get_addon_prefs().ds_point_size, loc.y)[0] - pos[0]
     return pos, rd
 
 

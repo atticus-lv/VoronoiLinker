@@ -10,12 +10,14 @@ bl_info = {
     'tracker_url': 'https://github.com/ugorek000/VoronoiLinker/issues'
 }
 
-from . import ops,prefs
+from . import ops,prefs,translation
 
 def register():
     ops.register()
     prefs.register()
+    translation.register()
 
 def unregister():
+    translation.unregister()
     ops.unregister()
     prefs.unregister()

@@ -17,8 +17,8 @@ class VoronoiAddonPrefs(bpy.types.AddonPreferences):
 
     ds_line_width: IntProperty(name='Line Width', default=1, min=1, max=16, subtype='FACTOR')
     ds_point_offset_x: FloatProperty(name='Point offset X', default=20, min=-50, max=50)
-    ds_point_resolution: IntProperty(name='Point resolution', default=54, min=3, max=64)
-    ds_point_radius: FloatProperty(name='Point radius scale', default=1, min=0, max=3)
+    ds_point_resolution: IntProperty(name='Point Resolution', default=54, min=3, max=64)
+    ds_point_size: FloatProperty(name='Point Size', default=1, min=0, max=3)
     ds_is_draw_sk_text: BoolProperty(name='Text', default=True)
     ds_is_colored_sk_text: BoolProperty(name='Text', default=True)
     ds_is_draw_marker: BoolProperty(name='Markers', default=True)
@@ -36,9 +36,8 @@ class VoronoiAddonPrefs(bpy.types.AddonPreferences):
 
     vlds_is_always_line: BoolProperty(name='Always draw line for VoronoiLinker', default=False)
     vm_preview_hk_inverse: BoolProperty(name='Previews hotkey inverse', default=False)
-    vm_is_one_skip: BoolProperty(name='One Choise to skip', default=True,
-                                 description='If the selection contains a single element, skip the selection and add it immediately')
-    vm_menu_style: EnumProperty(name='Mixer Menu Style', default='Pie',
+    vm_is_one_skip: BoolProperty(name='Directly Mix When There is Only One Choice', default=True)
+    vm_menu_style: EnumProperty(name='Mixer Menu Style', default='List',
                                 items={('Pie', 'Pie', ''), ('List', 'List', '')})
     vp_is_live_preview: BoolProperty(name='Live Preview', default=True)
     vp_select_previewed_node: BoolProperty(name='Select Previewed Node', default=True,
@@ -56,12 +55,11 @@ class VoronoiAddonPrefs(bpy.types.AddonPreferences):
     va_allow_classic_compos_viewer: BoolProperty(name='Allow classic Compositor viewer', default=False)
     va_allow_classic_geo_viewer: BoolProperty(name='Allow classic GeoNodes viewer', default=True)
     vh_draw_text_for_unhide: BoolProperty(name='Draw text for unhide node', default=False)
-    ds_is_draw_debug: BoolProperty(name='draw debug', default=False)
-    fm_is_included: BoolProperty(name='Include Fast Math Pie', default=True)
-    fm_is_empty_hold: BoolProperty(name='Empty placeholders', default=True)
-    fm_trigger_activate: EnumProperty(name='Activate trigger', default='FMA0',
-                                      items={('FMA0', 'If at least one is a math socket', ''),
-                                             ('FMA1', 'If everyone is a math socket', '')})
+    ds_is_draw_debug: BoolProperty(name='Debug', default=False)
+    fm_is_included: BoolProperty(name='Use Math Node for Float/Vector Socket', default=True)
+    fm_trigger_activate: EnumProperty(name='When', default='FMA0',
+                                      items={('FMA0', 'At least one is a math socket', ''),
+                                             ('FMA1', 'Everyone is a math socket', '')})
 
     def draw(self, context):
         layout = self.layout
@@ -76,9 +74,6 @@ class VoronoiAddonPrefs(bpy.types.AddonPreferences):
                 self.draw_keymaps(context, layout)
 
     def draw_draw(self, context, layout):
-
-        layout.prop(self, 'ds_text_style')
-        layout.prop(self, 'vlds_is_always_line')
 
         row = layout.row()
         row.use_property_split = True
@@ -96,20 +91,26 @@ class VoronoiAddonPrefs(bpy.types.AddonPreferences):
         col_split2.prop(self, 'ds_is_colored_line')
         col_split2.prop(self, 'ds_is_colored_area')
 
-        box = layout.box()
-        col1 = box.column(align=True)
-        col1.prop(self, 'ds_point_offset_x')
-        col1.prop(self, 'ds_text_frame_offset')
-        col1.prop(self, 'ds_font_size')
-        col1.separator()
+        col = layout.column(align=True)
+        col.use_property_split = True
+
+        col.prop(self, 'ds_text_style')
+        col.prop(self, 'vlds_is_always_line')
+        col.prop(self, 'ds_line_width')
+        col.prop(self, 'ds_point_size')
+        col.prop(self, 'ds_font_size')
+        col.separator()
+
+        col1 = layout.column(align=True)
         box = col1.box()
         box.prop(self, 'a_display_advanced', text='Advanced',
-                 icon='TRIA_DOWN' if self.a_display_advanced else 'TRIA_RIGHT',emboss=False)
+                 icon='TRIA_DOWN' if self.a_display_advanced else 'TRIA_RIGHT', emboss=False)
+
         if self.a_display_advanced:
             col2 = box.column()
             col3 = col2.column(align=True)
-            col3.prop(self, 'ds_line_width')
-            col3.prop(self, 'ds_point_radius')
+            col3.prop(self, 'ds_point_offset_x')
+            col3.prop(self, 'ds_text_frame_offset')
             col3.prop(self, 'ds_point_resolution')
             col3 = col2.column(align=True)
             col3.prop(self, 'ds_text_dist_from_cursor')
@@ -124,7 +125,7 @@ class VoronoiAddonPrefs(bpy.types.AddonPreferences):
                 row = col4.row(align=True)
                 row.prop(self, 'ds_shadow_offset')
                 col4.prop(self, 'ds_shadow_blur')
-            col2.prop(self, 'ds_is_draw_debug',text = 'Debug')
+            col2.prop(self, 'ds_is_draw_debug', text='Debug')
 
     def draw_keymaps(self, context, layout):
         col = layout.column()
@@ -164,17 +165,13 @@ class VoronoiAddonPrefs(bpy.types.AddonPreferences):
 
         box = layout.box()
         col1 = box.column(align=True)
-        col1.label(text='Mixer settings:')
-        col1.prop(self, 'vm_menu_style')
+        col1.label(text='Mixer Settings:')
+        # col1.prop(self, 'vm_menu_style')
         col1.prop(self, 'vm_is_one_skip')
-        box = box.box()
-        col1 = box.column(align=True)
-        col1.prop(self, 'fm_is_included')
+        row = col1.row(align=True)
+        row.prop(self, 'fm_is_included')
         if self.fm_is_included:
-            box = col1.box()
-            col1 = box.column(align=True)
-            col1.prop(self, 'fm_trigger_activate')
-            col1.prop(self, 'fm_is_empty_hold')
+            row.prop(self, 'fm_trigger_activate')
 
         box = layout.box()
         col1 = box.column(align=True)

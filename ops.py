@@ -37,7 +37,8 @@ class NODE_OT_voronoi_linker(bpy.types.Operator):
     def next_assign(sender, context, isBoth):
         pick_pos = context.space_data.cursor_location
         list_nodes = gen_nearest_node_list(context.space_data.edit_tree.nodes, pick_pos)
-        sender.list_sk_goal_in = []  # Если не разрешён, то предыдущий остаётся, что не удобно. Поэтому обнуляется каждый раз перед поиском.
+        # If not allowed, then the previous one remains, which is not convenient. Therefore, it is reset every time before the search.
+        sender.list_sk_goal_in = []
         for li in list_nodes:
             nd = li[1]
 
@@ -45,43 +46,81 @@ class NODE_OT_voronoi_linker(bpy.types.Operator):
             if (nd.hide is True) and (nd.type != 'REROUTE'): continue
 
             list_socket_in, list_socket_out = gen_nearest_sockets_list(nd, pick_pos)
-            # Этот инструмент триггерится на любой выход
+            # This tool will trigger on any output
             if isBoth:
                 sender.list_sk_goal_out = list_socket_out[0] if list_socket_out else []
-            # Получить вход по условиям:
-            if list_socket_in == []:  # На ноды без входов триггериться, и обнулять предыдущий результат если имеется.
+            # Get entry by conditions:
+            if len(list_socket_in) == 0:  # Trigger on nodes without inputs, and reset the previous result if any.
                 sender.list_sk_goal_in = []
-                break  # break можно делать, потому что далее вход искать негде.
-            skout = sender.list_sk_goal_out[1] if sender.list_sk_goal_out else None
-            if skout:  # Первый заход всегда isBoth=True, однако нод может не иметь выходов.
-                for lsi in list_socket_in:
-                    skin = lsi[1]
-                    # Для разрешённой-группы-между-собой разрешить "переходы". Рероутом для удобства можно в любой сокет минуя различные типы
-                    tgl = ((skin.type in list_sk_perms) and (skout.type in list_sk_perms) or (
-                            skout.node.type == 'REROUTE'))
-                    # Любой сокет для виртуального выхода, разрешить в виртуальный для любого сокета. Обоим в себя запретить
-                    tgl = (tgl) or (
-                            (skin.bl_idname == 'NodeSocketVirtual') ^ (skout.bl_idname == 'NodeSocketVirtual'))
-                    # Если имена типов одинаковые, но не виртуальные
-                    tgl = (tgl) or (skin.bl_idname == skout.bl_idname) and (
-                        not ((skin.bl_idname == 'NodeSocketVirtual') and (skout.bl_idname == 'NodeSocketVirtual')))
-                    if tgl:
-                        sender.list_sk_goal_in = lsi
-                        break  # Без break'а goal'ом будет самый дальний от курсора, удовлетворяющий условиям.
-                # Финальная проверка на корректность
-                if sender.list_sk_goal_in:
-                    if (sender.list_sk_goal_out[1].node == sender.list_sk_goal_in[1].node):
-                        sender.list_sk_goal_in = []
-                    elif (sender.list_sk_goal_out[1].is_linked):
-                        for lk in sender.list_sk_goal_out[1].links:
-                            # Выгода от break минимальна, мультиинпуты с большим количеством соединений редки
-                            if lk.to_socket == sender.list_sk_goal_in[1]:
-                                sender.list_sk_goal_in = []
-                                break
-            break  # Обработать нужно только первый ближайший, удовлетворяющий условиям.
+                break  # break can be done, because there is nowhere else to look for the input.
+
+            # The first entry is always isBoth=True, however, the node may not have exits.
+            if not sender.list_sk_goal_out: break
+
+            skout = sender.list_sk_goal_out[1]
+
+            for lsi in list_socket_in:
+                skin = lsi[1]
+                # Для разрешённой-группы-между-собой разрешить "переходы". Рероутом для удобства можно в любой сокет минуя различные типы
+                tgl = ((skin.type in list_sk_perms) and (skout.type in list_sk_perms) or (
+                        skout.node.type == 'REROUTE'))
+                # Любой сокет для виртуального выхода, разрешить в виртуальный для любого сокета. Обоим в себя запретить
+                tgl = (tgl) or (
+                        (skin.bl_idname == 'NodeSocketVirtual') ^ (skout.bl_idname == 'NodeSocketVirtual'))
+                # Если имена типов одинаковые, но не виртуальные
+                tgl = (tgl) or (skin.bl_idname == skout.bl_idname) and (
+                    not ((skin.bl_idname == 'NodeSocketVirtual') and (skout.bl_idname == 'NodeSocketVirtual')))
+                if tgl:
+                    sender.list_sk_goal_in = lsi
+                    break  # Without a break, the goal will be the furthest from the cursor that satisfies the conditions.
+            # Final validation check
+            if sender.list_sk_goal_in:
+                if (sender.list_sk_goal_out[1].node == sender.list_sk_goal_in[1].node):
+                    sender.list_sk_goal_in = []
+                elif (sender.list_sk_goal_out[1].is_linked):
+                    for lk in sender.list_sk_goal_out[1].links:
+                        # Benefit from break is minimal, multi-inputs with many connections are rare
+                        if lk.to_socket == sender.list_sk_goal_in[1]:
+                            sender.list_sk_goal_in = []
+                            break
+            break  # Only the first closest one that meets the conditions needs to be processed.
+
+    def link_(self, tree):
+        try:
+            lk = tree.links.new(self.list_sk_goal_out[1], self.list_sk_goal_in[1])
+        except:
+            pass  # NodeSocketUndefined
+
+        tgl = (lk.from_socket.bl_idname == 'NodeSocketVirtual') + (
+                lk.to_socket.bl_idname == 'NodeSocketVirtual') * 2
+
+        if tgl > 0:  # In version 3.5, a new socket is not automatically created.
+            if tgl == 1:
+                tree.inputs.new(lk.to_socket.bl_idname, lk.to_socket.name)
+                tree.links.remove(lk)
+                tree.links.new(self.list_sk_goal_out[1].node.outputs[-2], self.list_sk_goal_in[1])
+            else:
+                tree.outputs.new(lk.from_socket.bl_idname, lk.from_socket.name)
+                tree.links.remove(lk)
+                tree.links.new(self.list_sk_goal_out[1], self.list_sk_goal_in[1].node.inputs[-2])
+
+        # If multi-input - implement an adequate connection order. What is the meaning of the last being molded into the beginning?
+        if self.list_sk_goal_in[1].is_multi_input:
+            list_sk_links = []
+            for lk in self.list_sk_goal_in[1].links:
+                list_sk_links.append((lk.from_socket, lk.to_socket))
+                tree.links.remove(lk)
+            if self.list_sk_goal_out[1].bl_idname == 'NodeSocketVirtual':
+                self.list_sk_goal_out[1] = self.list_sk_goal_out[1].node.outputs[
+                    length(self.list_sk_goal_out[1].node.outputs) - 2]
+            tree.links.new(self.list_sk_goal_out[1], self.list_sk_goal_in[1])
+            for cyc in range(0, length(list_sk_links) - 1):
+                tree.links.new(list_sk_links[cyc][0], list_sk_links[cyc][1])
 
     def modal(self, context, event):
         context.area.tag_redraw()
+        tree = context.space_data.edit_tree
+
         match event.type:
             case 'MOUSEMOVE':
                 NODE_OT_voronoi_linker.next_assign(self, context, False)
@@ -91,34 +130,8 @@ class NODE_OT_voronoi_linker(bpy.types.Operator):
                 if event.value != 'RELEASE' or not self.list_sk_goal_in or not self.list_sk_goal_out:
                     return {'CANCELLED'}
 
-                tree = context.space_data.edit_tree
-                try:
-                    lk = tree.links.new(self.list_sk_goal_out[1], self.list_sk_goal_in[1])
-                except:
-                    pass  # NodeSocketUndefined
-                tgl = (lk.from_socket.bl_idname == 'NodeSocketVirtual') + (
-                        lk.to_socket.bl_idname == 'NodeSocketVirtual') * 2
-                if tgl > 0:  # В версии 3.5 новый сокет автоматически не создаётся.
-                    if tgl == 1:
-                        tree.inputs.new(lk.to_socket.bl_idname, lk.to_socket.name)
-                        tree.links.remove(lk)
-                        tree.links.new(self.list_sk_goal_out[1].node.outputs[-2], self.list_sk_goal_in[1])
-                    else:
-                        tree.outputs.new(lk.from_socket.bl_idname, lk.from_socket.name)
-                        tree.links.remove(lk)
-                        tree.links.new(self.list_sk_goal_out[1], self.list_sk_goal_in[1].node.inputs[-2])
-                if self.list_sk_goal_in[
-                    1].is_multi_input:  # Если мультиинпут -- реализовать адекватный порядок подключения. Накой смысол последние лепятся в начало?.
-                    list_sk_links = []
-                    for lk in self.list_sk_goal_in[1].links:
-                        list_sk_links.append((lk.from_socket, lk.to_socket))
-                        tree.links.remove(lk)
-                    if self.list_sk_goal_out[1].bl_idname == 'NodeSocketVirtual':
-                        self.list_sk_goal_out[1] = self.list_sk_goal_out[1].node.outputs[
-                            length(self.list_sk_goal_out[1].node.outputs) - 2]
-                    tree.links.new(self.list_sk_goal_out[1], self.list_sk_goal_in[1])
-                    for cyc in range(0, length(list_sk_links) - 1):
-                        tree.links.new(list_sk_links[cyc][0], list_sk_links[cyc][1])
+                self.link_(tree)
+
                 return {'FINISHED'}
 
         return {'RUNNING_MODAL'}
@@ -891,21 +904,22 @@ NT_MATH_MAP = {  # 0 for math, 1 for vector math
 
 MATH_MAP = {
     'Functions': [
-        'ADD', 'SUBTRACT', 'MULTIPLY', 'DIVIDE', 'MULTIPLY', None,  # None for empty line
-        'POWER', 'LOGARITHM', 'SQRT', 'INVERSE_SQRT', 'ABSOLUTE', 'EXPONENT',
+        'ADD', 'SUBTRACT', 'MULTIPLY', 'DIVIDE', 'MULTIPLY', 'POWER', 'LOGARITHM', 'SQRT', 'INVERSE_SQRT', 'ABSOLUTE',
+        'EXPONENT'
+
     ],
     'Comparisons': [
         'MINIMUM', 'MAXIMUM', 'LESS_THAN', 'GREATER_THAN', 'SIGN', 'COMPARE', 'SMOOTH_MIN', 'SMOOTH_MAX',
     ],
     'Rounding': [
-        'ROUND', 'FLOOR', 'CEIL', 'TRUNC', None,
+        'ROUND', 'FLOOR', 'CEIL', 'TRUNC',
         'FRACT', 'MODULO', 'WRAP', 'SNAP',
     ],
     'Trigonometry': [
-        'SINE', 'COSINE', 'TANGENT', None,
+        'SINE', 'COSINE', 'TANGENT',
         'ARCSINE', 'ARCCOSINE', 'ARCTANGENT', 'ARCTAN2'
     ],
-    'Convesion': [
+    'Conversion': [
         'RADIANS', 'DEGREES'
     ]
 }
@@ -934,15 +948,13 @@ VEC_MATH_MAP = {
 
 def reg_menu_cls(label, op_list):
     def _menu_draw(_cls, _context):
+        col = _cls.layout.column(align=True)
         for operation in op_list:
-            if operation is None:
-                _cls.layout.separator()
-            else:
-                texts = operation.split('_')
-                text = ' '.join([t.capitalize() for t in texts])
+            texts = operation.split('_')
+            text = ' '.join([t.capitalize() for t in texts])
 
-                _cls.layout.operator('node.voronoi_add_math_node',
-                                     text=_tips(text)).operation = operation
+            col.operator('node.voronoi_add_math_node',
+                         text=_tips(text)).operation = operation
 
     cls = type('DynMenu', (bpy.types.Menu,), {
         'bl_idname': f'VL_MT_voronoi_math_node_menu_{label}',
