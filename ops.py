@@ -21,6 +21,9 @@ from .draw_utils import (
     voronoi_Linker_draw_callback, debug_draw_callback, voronoi_mass_linker_draw_callback
 )
 
+displayWho = [0]
+displayList = [[]]
+
 
 class NODE_OT_voronoi_linker(bpy.types.Operator):
     bl_idname = 'node.a_voronoi_linker'
@@ -873,14 +876,14 @@ class NODE_OT_voronoi_hider(bpy.types.Operator):
         return {'RUNNING_MODAL'}
 
 
-NT_MATH_MAP = {
-    'MATH': {
+NT_MATH_MAP = {  # 0 for math, 1 for vector math
+    0: {
         'ShaderNodeTree': 'ShaderNodeMath',
         'GeometryNodeTree': 'ShaderNodeMath',
         'CompositorNodeTree': 'CompositorNodeMath',
         'TextureNodeTree': 'TextureNodeMath'
     },
-    'VECTOR_MATH': {
+    1: {
         'ShaderNodeTree': 'ShaderNodeVectorMath',
         'GeometryNodeTree': 'ShaderNodeVectorMath'
     }
@@ -908,97 +911,133 @@ MATH_MAP = {
 }
 
 VEC_MATH_MAP = {
-    'Operation': [
-        'SCALE', 'LENGTH', 'DISTANCE', None,
-        'DOT_PRODUCT', 'CROSS_PRODUCT', 'FACEFORWARD', 'PROJECT', 'REFRACT', 'REFLECT', None,
-        'SUBTRACT', 'ADD', 'DIVIDE', 'MULTIPLY', 'ABSOLUTE', 'MULTIPLY_ADD', None,
-        'SINE', 'COSINE', 'TANGENT', None,
-        'MINIMUM', 'MAXIMUM', 'FLOOR', 'CEIL', 'MODULO', 'FRACTION', 'WRAP', 'SNAP', 'ABSOLUTE', None,
+    'Basic': [
+        'SCALE', 'LENGTH', 'DISTANCE'
+    ],
+    'Rays': [
+        'DOT_PRODUCT', 'CROSS_PRODUCT', 'FACEFORWARD', 'PROJECT', 'REFRACT', 'REFLECT'
+    ],
+    'Functions': [
+        'SUBTRACT', 'ADD', 'DIVIDE', 'MULTIPLY', 'ABSOLUTE', 'MULTIPLY_ADD'
+    ],
+    'Trigonometry': [
+        'SINE', 'COSINE', 'TANGENT'
+    ],
+    'Rounding': [
+        'MINIMUM', 'MAXIMUM', 'FLOOR', 'CEIL', 'MODULO', 'FRACTION', 'WRAP', 'SNAP'
+    ],
+    'Normalization': [
         'NORMALIZE'
     ]
 }
 
-displayList = [[]]
-displayWho = [0]
-displayDeep = [0]
+
+def reg_menu_cls(label, op_list):
+    def _menu_draw(_cls, _context):
+        for operation in op_list:
+            if operation is None:
+                _cls.layout.separator()
+            else:
+                texts = operation.split('_')
+                text = ' '.join([t.capitalize() for t in texts])
+
+                _cls.layout.operator('node.voronoi_add_math_node',
+                                     text=_tips(text)).operation = operation
+
+    cls = type('DynMenu', (bpy.types.Menu,), {
+        'bl_idname': f'VL_MT_voronoi_math_node_menu_{label}',
+        'bl_label': label,
+        'draw': _menu_draw
+    })
+
+    return cls
+
+
+class NODE_OT_voronoi_add_math_node(bpy.types.Operator):
+    bl_idname = 'node.voronoi_add_math_node'
+    bl_label = 'Add Math Node'
+
+    operation: StringProperty()
+
+    def execute(self, context):
+        tree = context.space_data.edit_tree
+        typ = NT_MATH_MAP[displayWho[0]].get(context.space_data.tree_type, None)
+        if typ is None: return {'CANCELLED'}
+
+        bpy.ops.node.add_node('INVOKE_DEFAULT', type=typ, use_transform=True)
+
+        aNd = context.space_data.edit_tree.nodes.active
+        aNd.operation = self.operation
+        tree.links.new(mixerSks[0], aNd.inputs[0])
+        if mixerSks[1]:  tree.links.new(mixerSks[1], aNd.inputs[1])
+        return {'FINISHED'}
 
 
 class NODE_OT_voronoi_fastmath(bpy.types.Operator):
     bl_idname = 'node.voronoi_fastmath'
     bl_label = 'Fast Maths Pie'
+
     bridge: StringProperty()
+    operation: StringProperty()
+    dep_cls = None
+
+    @classmethod
+    def poll(cls, context):
+        return context.space_data.edit_tree
 
     def modal(self, context, event):
         self.bridge = ''
         return {'FINISHED'}
 
     def invoke(self, context, event):
-        tree = context.space_data.edit_tree
-        if tree is None:
-            return {'CANCELLED'}
-
-        def DispMenu(dp):
-            displayDeep[0] = dp
-            bpy.ops.wm.call_menu(name='VL_MT_voronoi_fastmath_pie')
-
-        # whoList = listMathMap if displayWho[0] == 0 else listVecMathMap
-        # displayList[0] = [li[0] for li in whoList]
+        if NODE_OT_voronoi_fastmath.dep_cls:
+            bpy.utils.unregister_class(NODE_OT_voronoi_fastmath.dep_cls)
+        NODE_OT_voronoi_fastmath.dep_cls = None
 
         whoList = MATH_MAP if displayWho[0] == 0 else VEC_MATH_MAP
+
         displayList[0] = list(whoList.keys())
 
-        if self.bridge in ['', ' ']:
-            DispMenu(0)
-        elif self.bridge in displayList[0]:
-            displayList[0] = [value for key, value in whoList.items() if key == self.bridge][0]
-            DispMenu(1)
-        else:
-            typ = NT_MATH_MAP[displayWho[0]].get(context.space_data.tree_type, None)
-            if typ is None:
-                # bpy.ops.node.add_search('INVOKE_DEFAULT', use_transform=True)
-                return {'CANCELLED'}
-            else:
-                bpy.ops.node.add_node('INVOKE_DEFAULT', type=typ, use_transform=True)
+        def draw(self, context):
+            for label in displayList[0]:
+                self.layout.menu(f'VL_MT_voronoi_math_node_menu_{label}', text=label)
 
-            aNd = context.space_data.edit_tree.nodes.active
-            aNd.operation = self.bridge
-            tree.links.new(mixerSks[0], aNd.inputs[0])
-            if mixerSks[1]:  # Чтобы можно было "вытягивать" быструю математику из сокета
-                tree.links.new(mixerSks[1], aNd.inputs[1])
+        NODE_OT_voronoi_fastmath.dep_cls = type('DynMenu', (bpy.types.Menu,), {
+            'bl_idname': f'VL_MT_voronoi_math_node_menu',
+            'bl_label': 'Maths',
+            'draw': draw
+        })
+        bpy.utils.register_class(NODE_OT_voronoi_fastmath.dep_cls)
+        bpy.ops.wm.call_menu('INVOKE_DEFAULT', name='VL_MT_voronoi_math_node_menu')
 
         return {'RUNNING_MODAL'}
 
 
-class VL_MT_voronoi_fastmath_pie(bpy.types.Menu):
-    bl_idname = 'VL_MT_voronoi_fastmath_pie'
-    bl_label = ''
-
-    def draw(self, context):
-        pie = self.layout.column()
-        for li in displayList[0]:
-            # if (get_addon_prefs().fm_is_empty_hold is False) and (li == ' '): continue
-
-            if li is None:
-                pie.separator()
-                continue
-
-            text = li.capitalize() if displayDeep[0] == 1 else li
-            op = pie.operator(NODE_OT_voronoi_fastmath.bl_idname, text=_tips(text))
-            op.bridge = li
-
-
-list_classes = [NODE_OT_voronoi_linker, NODE_OT_voronoi_mass_linker, NODE_OT_voronoi_mixer, NODE_OT_voronoi_mixer_mixer,
-                VL_MT_voronoi_mixer_menu, NODE_OT_voronoi_previewer,
-                NODE_OT_voronoi_hider, NODE_OT_voronoi_fastmath, VL_MT_voronoi_fastmath_pie]
+menu_class = {}  # register class for menu
+op_classes = [NODE_OT_voronoi_linker, NODE_OT_voronoi_mass_linker, NODE_OT_voronoi_mixer, NODE_OT_voronoi_mixer_mixer,
+              VL_MT_voronoi_mixer_menu, NODE_OT_voronoi_previewer,
+              NODE_OT_voronoi_hider, NODE_OT_voronoi_add_math_node, NODE_OT_voronoi_fastmath]
 
 
 def register():
-    for li in list_classes:
+    for label, op_list in MATH_MAP.items():
+        menu_class[label] = reg_menu_cls(label, op_list)
+
+    for label, op_list in VEC_MATH_MAP.items():
+        menu_class[label] = reg_menu_cls(label, op_list)
+
+    for cls in menu_class.values():
+        bpy.utils.register_class(cls)
+
+    for li in op_classes:
         bpy.utils.register_class(li)
 
 
 def unregister():
-    for li in reversed(list_classes):
+    for cls in menu_class.values():
+        bpy.utils.unregister_class(cls)
+
+    for li in reversed(op_classes):
         bpy.utils.unregister_class(li)
 
 
